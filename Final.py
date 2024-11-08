@@ -8,7 +8,7 @@ from time import sleep
 from threading import Thread
 
 
-sound = 'alarm.wav'
+sound = 'assets/alarm.wav'
 if 'search_term' not in st.session_state:
     st.session_state.search_term = ""  # Initialize search term
 if 'page' not in st.session_state:
@@ -25,7 +25,7 @@ def switch_page(page_name):
 
 
 # Database configuration
-db = SqliteDatabase('task6.db')
+db = SqliteDatabase('task7.db')
 
 # Define User and Task models
 class User(Model):
@@ -40,6 +40,7 @@ class Task(Model):
     due_date = DateField()
     time_estimate = IntegerField()
     time_due = TimeField()
+    alarm_time = TimeField(null=True) 
     urgency = BooleanField()
     importance = BooleanField()
     done = BooleanField(default=False)
@@ -57,27 +58,31 @@ db.create_tables([User, Task], safe=True)
 
 
 # Alert for due or overdue tasks
-def task_alerts():
+def check_notifications_and_alarm():
     if st.session_state.current_user:
         user_tasks = Task.select().where(Task.user == st.session_state.current_user)
-        current_time = datetime.now()
 
-    for task in user_tasks:  # Assuming you have a list of user tasks
-        # Ensure notification_time is a valid integer (defaulting to 0 if not)
-        notification_time = task.notification_time if isinstance(task.notification_time, int) else 0
+        for task in user_tasks:
+            # Combine due date and due time to get the full due datetime
+            due_datetime = datetime.combine(task.due_date, task.time_due)
+            
+            # Calculate notification time: notify before `due_time`
+            notification_datetime = due_datetime - timedelta(minutes=task.notification_time)
+            
+            current_time = datetime.now()
 
-        # Combine due_date with midnight time
-        task_datetime = datetime.combine(task.due_date, datetime.min.time())
-        
-        # Subtract the notification time (if valid) from the task due time
-        task_time = task_datetime - timedelta(minutes=notification_time)
+            # Check if it's time for a notification
+            if current_time >= notification_datetime and current_time < due_datetime and not task.done:
+                st.info(f"Reminder: Task '{task.task_name}' is due soon!")
+            
+            # Check if it's time for the alarm to trigger
+            if current_time >= due_datetime and not task.alarm_triggered and not task.done and task.alarm_enabled:
+                st.warning(f"ALARM! Task '{task.task_name}' is due now!")
+                with open(sound, "rb") as alarm_file:
+                    st.audio(alarm_file.read(), format="audio/wav")
+                task.alarm_triggered = True
+                task.save()
 
-        print(f"Task: {task.task_name}, Due: {task_datetime}, Notification: {task_time}, Current: {current_time}")  # Debug print
-
-        if current_time >= task_time and current_time < task_datetime:
-            # This task is due soon and should send an alert
-            print(f"Task '{task.task_name}' is due soon.")   
-            st.warning(f"Alert for task '{task.task_name}': Due at {task.due_date}.")
 
 
 
@@ -89,22 +94,7 @@ def play_alarm():
         st.audio(alarm_file.read(), format="audio/wav")
         
 
-def check_alarm():
-    """Check for alarms without blocking Streamlit execution."""
-    if st.session_state.current_user:
-        user_tasks = Task.select().where(Task.user == st.session_state.current_user)
-    if user_tasks:
-        for task in user_tasks:
-            alarm_datetime = datetime.combine(task.due_date, task.time_due)
-            current_time = datetime.now()
-            if current_time >= alarm_datetime:
-                if task.alarm_enabled and not task.alarm_triggered:
-                    # Trigger alarm only if it hasn't been triggered
-                    st.warning(f"ALARM! Task '{task.task_name}' is due!")
-                    # Trigger the alarm sound
-                    play_alarm()
-                    task.alarm_triggered = True  # Update task to prevent multiple alarms
-                    task.save()
+
                     
 def register_user():
     name = st.text_input("Enter your name", key="reg_name")
@@ -155,7 +145,7 @@ def add_task():
                 task_name=task_name,
                 due_date=due_date,
                 time_estimate=time_estimate,
-                time_due =time_due,
+                time_due = time_due,
                 alarm_enabled = set_alarm,
                 urgency=urgency,
                 importance=importance,
@@ -255,7 +245,7 @@ def search_tasks():
             if filtered_tasks:
                 st.write("Filtered Tasks:")
                 for i, task in enumerate(filtered_tasks, 1):
-                    st.write(f"{i}. Task: {task.task_name}, Due Date: {task.due_date}")
+                    st.write(f"{i}. Task: {task.task_name}, Due Date: {task.due_date}, Time Due: {task.time_due}")
             else:
                 st.warning("No tasks found with that name.")
 
@@ -282,9 +272,11 @@ def update_task():
             task = Task.get(Task.id == selected_task[1])
             new_name = st.text_input("Task name:", value=task.task_name)
             new_due_date = st.date_input("Due date:", value=task.due_date)
+            new_time_due = st.time_input("Time due:" ,value = task.time_due)
             if st.button("Update Task", key="update_task_button"):
                 task.task_name = new_name
                 task.due_date = new_due_date
+                task.time_due = new_time_due
                 task.save()
                 st.success("Task updated successfully.")
 
@@ -372,8 +364,8 @@ def main():
             register_user()
     else:
         display_menu()
-        task_alerts()
-        check_alarm()
+        
+        check_notifications_and_alarm()
 
         if st.session_state.page == 'Add Task':
             add_task()
