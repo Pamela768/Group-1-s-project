@@ -7,9 +7,8 @@ import pygame
 from time import sleep
 from threading import Thread
 
-pygame.mixer.init()
-sound = r"C:\Users\Pamela\Documents\GTB\alarm.wav"
 
+sound = 'alarm.wav'
 if 'search_term' not in st.session_state:
     st.session_state.search_term = ""  # Initialize search term
 if 'page' not in st.session_state:
@@ -81,16 +80,14 @@ def task_alerts():
             st.warning(f"Alert for task '{task.task_name}': Due at {task.due_date}.")
 
 
-if not pygame.mixer.get_init():
-    pygame.mixer.init()
+
+
 
 def play_alarm():
-    """Function to play the alarm sound in a separate thread."""
-    pygame.mixer.music.load(sound)
-    pygame.mixer.music.play()
-    while pygame.mixer.music.get_busy():
-        sleep(0.1)  # Wait for the music to finish playing
-
+    """Function to play the alarm sound using Streamlit's native audio feature."""
+    with open(sound, "rb") as alarm_file:
+        st.audio(alarm_file.read(), format="audio/wav")
+        
 
 def check_alarm():
     """Check for alarms without blocking Streamlit execution."""
@@ -104,9 +101,9 @@ def check_alarm():
                 if task.alarm_enabled and not task.alarm_triggered:
                     # Trigger alarm only if it hasn't been triggered
                     st.warning(f"ALARM! Task '{task.task_name}' is due!")
-                    # Trigger the alarm in a separate thread
-                    Thread(target=play_alarm).start()
-                    task.alarm_triggered = True# Update task to prevent multiple alarms
+                    # Trigger the alarm sound
+                    play_alarm()
+                    task.alarm_triggered = True  # Update task to prevent multiple alarms
                     task.save()
                     
 def register_user():
